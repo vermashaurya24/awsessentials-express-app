@@ -1,7 +1,8 @@
 # Use the official Node.js image as a parent image
-FROM node:22
+FROM node:18.16-alpine
 
 # Set the working directory inside the container
+RUN mkdir /app
 WORKDIR /app
 
 # Copy package.json and yarn.lock into the container
@@ -17,5 +18,6 @@ COPY . .
 EXPOSE 3000
 
 # Run the application
-CMD ["node", "index.js"]
+# CMD ["node", "index.js"]
+ENTRYPOINT ["node", "index.js"]
 

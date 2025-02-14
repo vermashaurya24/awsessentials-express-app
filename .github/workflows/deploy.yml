@@ -1,0 +1,40 @@
+name: Deploy to EC2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Build Docker image
+      run: docker build -t express-hello-world .
+
+    - name: Save Docker image to tar
+      run: docker save express-hello-world -o express-hello-world.tar
+
+    - name: Copy docker image to EC2
+      uses: appleboy/scp-action@v0.2.1
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: express-hello-world.tar
+        target: /home/ec2-user/
+
+    - name: Deploy Docker image on EC2
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          docker load -i /home/ec2-user/express-hello-world.tar
+          docker stop express-hello-world || true
+          docker rm express-hello-world || true
+          docker run -d -p 80:3000 --name express-hello-world express-hello-world
+
