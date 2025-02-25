@@ -1,7 +1,14 @@
 name: Deploy to EC2
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ap-southeast-2  # Change this to your AWS region
+  ECR_REPOSITORY: awsessentials/common  # Change this to your ECR repository name
+  EC2_HOST: your-ec2-host  # Change this to your EC2 host
 
 jobs:
   deploy:
@@ -9,32 +16,46 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v2
 
-    - name: Build Docker image
-      run: docker build -t express-hello-world .
-
-    - name: Save Docker image to tar
-      run: docker save express-hello-world -o express-hello-world.tar
-
-    - name: Copy docker image to EC2
-      uses: appleboy/scp-action@v0.2.1
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
       with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        source: express-hello-world.tar
-        target: /home/ec2-user/
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
-    - name: Deploy Docker image on EC2
-      uses: appleboy/ssh-action@v0.1.5
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          docker load -i /home/ec2-user/express-hello-world.tar
-          docker stop express-hello-world || true
-          docker rm express-hello-world || true
-          docker run -d -p 80:3000 --name express-hello-world express-hello-world
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+      
+    - name: Build, tag, and push docker image to Amazon ECR
+      env:
+        REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
+    # - name: Deploy to EC2
+    #   uses: appleboy/ssh-action@master
+    #   with:
+    #     host: ${{ env.EC2_HOST }}
+    #     username: ec2-user  # Change this if your EC2 instance uses a different username
+    #     key: ${{ secrets.EC2_SSH_KEY }}
+    #     script: |
+    #       # Login to ECR
+    #       aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          
+    #       # Pull the new image
+    #       docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          
+    #       # Stop and remove the old container if it exists
+    #       docker stop app-container || true
+    #       docker rm app-container || true
+          
+    #       # Run the new container
+    #       docker run -d \
+    #         --name app-container \
+    #         -p 3000:3000 \
+    #         ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
